@@ -1,0 +1,128 @@
+use anyhow::{Result, anyhow};
+use chip8_core::*;
+use clap::Parser;
+use sdl2::keyboard::Keycode;
+use sdl2::{event::Event, pixels::Color, rect::Rect, render::Canvas, video::Window};
+use std::fs::File;
+use std::io::Read;
+use std::path::PathBuf;
+
+const SCALE: u32 = 15;
+const WINDOW_WIDTH: u32 = (Screen::width() as u32) * SCALE;
+const WINDOW_HEIGHT: u32 = (Screen::height() as u32) * SCALE;
+const TICKS_PER_FRAME: usize = 10;
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct CLI {
+    /// Path to the chip8 ROM to load
+    rom_path: PathBuf,
+}
+
+fn main() -> Result<()> {
+    let cli = CLI::parse();
+
+    let sdl_context = sdl2::init().map_err(|e| anyhow!("Failed to initialize SDL2: {}", e))?;
+    let video_subsystem = sdl_context
+        .video()
+        .map_err(|e| anyhow!("Failed to access video subsystem: {}", e))?;
+    let window = video_subsystem
+        .window("Chip8Emu", WINDOW_WIDTH, WINDOW_HEIGHT)
+        .position_centered()
+        .vulkan()
+        .build()?;
+
+    let mut canvas = window.into_canvas().present_vsync().build()?;
+    canvas.clear();
+    canvas.present();
+
+    let mut event_pump = sdl_context
+        .event_pump()
+        .map_err(|e| anyhow!("Failed to access event pump: {}", e))?;
+
+    let mut chip8 = Chip8Core::new();
+    let mut rom = File::open(&cli.rom_path)?;
+    let mut buffer = Vec::new();
+    rom.read_to_end(&mut buffer)?;
+    chip8.load(&buffer);
+
+    'gameloop: loop {
+        for evt in event_pump.poll_iter() {
+            match evt {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => {
+                    break 'gameloop;
+                }
+                Event::KeyDown {
+                    keycode: Some(key), ..
+                } => {
+                    if let Some(k) = key2btn(key) {
+                        chip8.keypress(k, true);
+                    }
+                }
+                Event::KeyUp {
+                    keycode: Some(key), ..
+                } => {
+                    if let Some(k) = key2btn(key) {
+                        chip8.keypress(k, false);
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        for _ in 0..TICKS_PER_FRAME {
+            chip8.tick()?;
+        }
+        chip8.tick_timers();
+        draw_screen(&chip8, &mut canvas)?;
+    }
+
+    Ok(())
+}
+
+fn key2btn(key: sdl2::keyboard::Keycode) -> Option<usize> {
+    match key {
+        Keycode::Num1 => Some(0x1),
+        Keycode::Num2 => Some(0x2),
+        Keycode::Num3 => Some(0x3),
+        Keycode::Num4 => Some(0xC),
+        Keycode::Q => Some(0x4),
+        Keycode::W => Some(0x5),
+        Keycode::E => Some(0x6),
+        Keycode::R => Some(0xD),
+        Keycode::A => Some(0x7),
+        Keycode::S => Some(0x8),
+        Keycode::D => Some(0x9),
+        Keycode::F => Some(0xE),
+        Keycode::Z => Some(0xA),
+        Keycode::X => Some(0x0),
+        Keycode::C => Some(0xB),
+        Keycode::V => Some(0xF),
+        _ => None,
+    }
+}
+
+fn draw_screen(emu: &Chip8Core, canvas: &mut Canvas<Window>) -> Result<()> {
+    canvas.set_draw_color(Color::RGB(0, 0, 0));
+    canvas.clear();
+
+    let screen_buf = emu.get_display();
+
+    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    for (i, pixel) in screen_buf.iter().enumerate() {
+        if *pixel {
+            let x = (i % Screen::width()) as u32;
+            let y = (i / Screen::width()) as u32;
+            let rect = Rect::new((x * SCALE) as i32, (y * SCALE) as i32, SCALE, SCALE);
+            canvas
+                .fill_rect(rect)
+                .map_err(|e| anyhow!("Failed to draw rect: {}", e))?;
+        }
+    }
+    canvas.present();
+    Ok(())
+}

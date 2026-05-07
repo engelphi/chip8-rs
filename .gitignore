@@ -1,0 +1,4 @@
+/target
+/web/chip8_wasm.js
+/web/chip8_wasm_bg.wasm
+/chip8_wasm/pkg
