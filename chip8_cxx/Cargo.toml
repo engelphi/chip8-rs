@@ -1,0 +1,27 @@
+[package]
+name = "chip8_cxx"
+version = "0.0.0"
+edition = "2024"
+build = "build.rs"
+
+[lib]
+name = "chip8_cxx"
+crate-type = ["staticlib", "lib"]
+
+[dependencies]
+chip8_core = { path = "../chip8_core" }
+cxx = "1.0.194"
+
+[build-dependencies]
+cxx-build = "1.0.194"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = "none"
+debug-assertions = false
+lto = true
+panic = 'unwind'
+incremental = false
+codegen-units = 16
+rpath = false
